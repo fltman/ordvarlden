@@ -1,0 +1,699 @@
+/* Ordvärlden — mörkt tusch & papper.
+   Duotonen matchar renderern: sida #0a0a12, papper #faf7ef, tusch #12131f. */
+
+:root {
+  --bg: #0a0a12;
+  --paper: #faf7ef;
+  --ink: #12131f;
+  --hairline: rgba(250, 247, 239, 0.18);
+  --paper-dim: rgba(250, 247, 239, 0.62);
+  --paper-faint: rgba(250, 247, 239, 0.38);
+  --veil: rgba(10, 10, 18, 0.72);
+  --glass: rgba(10, 10, 18, 0.52);
+  --serif: "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif;
+  --sans: system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+[hidden] { display: none !important; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--paper);
+  font-family: var(--sans);
+  overflow: hidden;
+}
+
+:focus-visible {
+  outline: 2px solid var(--paper-dim);
+  outline-offset: 2px;
+}
+
+/* ---- Canvas ---- */
+
+#gpu {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+  background: var(--bg);
+}
+
+/* ---- Bootveil ---- */
+
+#boot {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at center, #11121f 0%, var(--bg) 72%);
+  transition: opacity 0.9s ease;
+}
+
+#boot.done {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.boot-inner { text-align: center; }
+
+.boot-title {
+  margin: 0 0 0.75rem;
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: clamp(2.1rem, 6vw, 3.4rem);
+  letter-spacing: 0.06em;
+  color: var(--paper);
+}
+
+.boot-msg {
+  margin: 0;
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 1.05rem;
+  color: var(--paper-dim);
+  animation: breathe 2.4s ease-in-out infinite;
+}
+
+@keyframes breathe {
+  0%, 100% { opacity: 0.45; }
+  50%      { opacity: 1; }
+}
+
+/* ---- Fatalt fel ---- */
+
+#fatal {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--veil);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.fatal-inner {
+  max-width: 30rem;
+  margin: 1rem;
+  padding: 2rem 2.4rem;
+  background: var(--paper);
+  color: var(--ink);
+  border-radius: 4px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  font-family: var(--serif);
+}
+
+.fatal-inner h1 {
+  margin: 0 0 0.6rem;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+#fatal-msg {
+  margin: 0;
+  line-height: 1.55;
+}
+
+/* ---- Statusnotiser ---- */
+
+#status {
+  position: fixed;
+  top: 1.1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 0.55em;
+  max-width: min(80vw, 34rem);
+  padding: 0.45rem 1.1rem;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--glass);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  font-size: 0.85rem;
+  letter-spacing: 0.02em;
+  color: var(--paper-dim);
+  white-space: nowrap;
+}
+
+#status::before {
+  content: "";
+  flex: none;
+  width: 0.5em;
+  height: 0.5em;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.7;
+}
+
+#status-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#status[data-kind="busy"] { color: var(--paper); }
+#status[data-kind="busy"]::before { animation: breathe 1.2s ease-in-out infinite; }
+
+#status[data-kind="ok"] {
+  color: #cfe3bd;
+  border-color: rgba(207, 227, 189, 0.35);
+}
+
+#status[data-kind="error"] {
+  color: #f0c3b9;
+  border-color: rgba(240, 195, 185, 0.4);
+}
+
+/* ---- Bottenraden: ordfältet + ♪-knappen ---- */
+
+#bottombar {
+  position: fixed;
+  bottom: 2.2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+/* ---- Ordfältet (hjältekontrollen) ---- */
+
+#wordbar {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: box-shadow 0.4s ease, border-color 0.4s ease;
+}
+
+#wordbar:focus-within {
+  border-color: rgba(250, 247, 239, 0.4);
+  box-shadow:
+    0 0 0 1px rgba(250, 247, 239, 0.12),
+    0 0 34px rgba(250, 247, 239, 0.14);
+}
+
+#word-input {
+  width: min(46vw, 17rem);
+  padding: 0.6rem 1.1rem;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: var(--serif);
+  font-size: 1.25rem;
+  letter-spacing: 0.04em;
+  text-align: center;
+  color: var(--paper);
+}
+
+#word-input::placeholder {
+  color: var(--paper-faint);
+  font-style: italic;
+}
+
+#word-submit {
+  padding: 0 1.3rem;
+  border: none;
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: transform 0.15s ease, opacity 0.3s ease;
+}
+
+#word-submit:hover { transform: translateY(-1px); }
+#word-submit:active { transform: translateY(0); }
+#word-submit:disabled { cursor: wait; }
+
+/* Upptagen: mjuk puls medan ett ord genereras */
+#wordbar.busy {
+  animation: barpulse 1.6s ease-in-out infinite;
+}
+#wordbar.busy #word-input { opacity: 0.55; }
+#wordbar.busy #word-submit { opacity: 0.7; }
+
+@keyframes barpulse {
+  0%, 100% {
+    box-shadow:
+      0 0 0 1px rgba(250, 247, 239, 0.08),
+      0 0 18px rgba(250, 247, 239, 0.08);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px rgba(250, 247, 239, 0.2),
+      0 0 40px rgba(250, 247, 239, 0.2);
+  }
+}
+
+/* ---- HUD: ordlista ---- */
+
+#wordlist {
+  position: fixed;
+  top: 1.1rem;
+  left: 1.2rem;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding-right: 0.5rem;
+  font-family: var(--serif);
+  font-size: 1rem;
+  scrollbar-width: none;
+}
+
+#wordlist .word {
+  position: relative;
+  padding-left: 1.15em;
+  line-height: 1.5;
+  letter-spacing: 0.05em;
+  color: var(--paper-faint);
+  transition: color 0.4s ease;
+}
+
+#wordlist .word.current {
+  color: var(--paper);
+}
+
+#wordlist .word.current::before {
+  content: "✦";
+  position: absolute;
+  left: 0;
+  font-size: 0.8em;
+  top: 0.2em;
+  color: var(--paper-dim);
+}
+
+#wordlist .word.pending {
+  font-style: italic;
+  opacity: 0.75;
+}
+
+#wordlist .word.pending::after { content: " …"; }
+
+/* ---- Hjälp ---- */
+
+#help {
+  position: fixed;
+  right: 1.2rem;
+  bottom: 1.4rem;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.78rem;
+  letter-spacing: 0.03em;
+  color: var(--paper-faint);
+}
+
+#help-toggle {
+  width: 1.7rem;
+  height: 1.7rem;
+  border: 1px solid var(--hairline);
+  border-radius: 50%;
+  background: var(--glass);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: var(--paper-dim);
+  font-family: var(--serif);
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: color 0.3s ease, border-color 0.3s ease;
+}
+
+#help-toggle:hover,
+#help.open #help-toggle {
+  color: var(--paper);
+  border-color: rgba(250, 247, 239, 0.4);
+}
+
+#help-panel {
+  position: absolute;
+  right: 0;
+  bottom: 2.7rem;
+  width: min(78vw, 21rem);
+  padding: 1.1rem 1.3rem;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: rgba(10, 10, 18, 0.78);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  color: var(--paper-dim);
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+
+#help-panel h2 {
+  margin: 0 0 0.5rem;
+  font-family: var(--serif);
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--paper);
+}
+
+#help-panel ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+#help-panel li + li { margin-top: 0.3rem; }
+
+#help-panel kbd {
+  padding: 0 0.35em;
+  border: 1px solid var(--hairline);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: rgba(250, 247, 239, 0.08);
+  font-family: var(--sans);
+  font-size: 0.75rem;
+  color: var(--paper);
+}
+
+/* ---- Låt-läge: ♪-knappen ---- */
+
+#songbar {
+  display: flex;
+  align-items: center;
+}
+
+#song-toggle {
+  width: 2.6rem;
+  height: 2.6rem;
+  border: 1px solid var(--hairline);
+  border-radius: 50%;
+  background: var(--glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: var(--paper-faint);
+  font-family: var(--serif);
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.3s ease, border-color 0.3s ease, transform 0.15s ease;
+}
+
+#song-toggle:hover {
+  color: var(--paper);
+  border-color: rgba(250, 247, 239, 0.4);
+  transform: translateY(-1px);
+}
+
+#song-toggle[aria-expanded="true"] {
+  color: var(--paper);
+  border-color: rgba(250, 247, 239, 0.4);
+}
+
+/* ---- Låt-läge: panel ---- */
+
+#songpanel {
+  position: fixed;
+  bottom: 6.6rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 45;
+  width: min(88vw, 26rem);
+  padding: 1.1rem 1.3rem 1.2rem;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: rgba(10, 10, 18, 0.82);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  color: var(--paper-dim);
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.song-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.6rem;
+}
+
+.song-head h2 {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--paper);
+}
+
+.song-step > p { margin: 0 0 0.7rem; }
+
+.song-desc { color: var(--paper-dim); }
+
+.song-file-name {
+  font-family: var(--serif);
+  font-style: italic;
+  color: var(--paper);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.song-stats {
+  font-family: var(--serif);
+  font-size: 1rem;
+  letter-spacing: 0.03em;
+  color: var(--paper);
+}
+
+.song-busy {
+  display: flex;
+  align-items: center;
+  gap: 0.55em;
+  color: var(--paper);
+}
+
+.song-spinner {
+  flex: none;
+  display: inline-block;
+  width: 0.95em;
+  height: 0.95em;
+  border: 2px solid var(--hairline);
+  border-top-color: var(--paper);
+  border-radius: 50%;
+  animation: songspin 0.9s linear infinite;
+}
+
+@keyframes songspin {
+  to { transform: rotate(360deg); }
+}
+
+.song-hint {
+  font-size: 0.78rem;
+  font-style: italic;
+  color: var(--paper-faint);
+}
+
+.song-error {
+  margin: 0.7rem 0 0;
+  color: #f0c3b9;
+}
+
+.song-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.9rem;
+}
+
+.song-btn {
+  padding: 0.55rem 1.3rem;
+  border: none;
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: transform 0.15s ease, opacity 0.3s ease;
+}
+
+.song-btn:hover:not(:disabled) { transform: translateY(-1px); }
+.song-btn:active:not(:disabled) { transform: translateY(0); }
+.song-btn:disabled { opacity: 0.45; cursor: default; }
+
+.song-btn-ghost {
+  padding: 0.32rem 0.9rem;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--paper-dim);
+  font-family: var(--sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color 0.3s ease, border-color 0.3s ease;
+}
+
+.song-btn-ghost:hover {
+  color: var(--paper);
+  border-color: rgba(250, 247, 239, 0.4);
+}
+
+/* ---- Låt-läge: mini-pill under uppspelning ---- */
+
+#songpill {
+  position: fixed;
+  top: 1.1rem;
+  right: 1.2rem;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  max-width: min(70vw, 24rem);
+  padding: 0.4rem 0.5rem 0.4rem 1rem;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--glass);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  font-size: 0.85rem;
+}
+
+.songpill-note {
+  flex: none;
+  font-family: var(--serif);
+  color: var(--paper-dim);
+}
+
+#songpill-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--serif);
+  font-style: italic;
+  color: var(--paper);
+}
+
+#songpill .song-btn-ghost { flex: none; }
+
+/* ---- Låt-läge: karaokeremsa ---- */
+
+#karaoke {
+  position: fixed;
+  bottom: 6.8rem;
+  left: 0;
+  right: 0;
+  z-index: 39;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 1.6rem;
+  pointer-events: none;
+  font-family: var(--serif);
+}
+
+.karaoke-word {
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.karaoke-prev,
+.karaoke-next {
+  flex: 0 0 9rem;
+  font-size: 1rem;
+  color: var(--paper-faint);
+}
+
+.karaoke-prev { text-align: right; }
+.karaoke-next { text-align: left; }
+
+.karaoke-current {
+  max-width: 44vw;
+  font-size: 1.6rem;
+  color: var(--paper);
+  text-shadow: 0 0 24px rgba(250, 247, 239, 0.25);
+}
+
+/* ---- Noscript ---- */
+
+.noscript {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background: var(--bg);
+  color: var(--paper);
+  font-family: var(--serif);
+  font-size: 1.1rem;
+  text-align: center;
+}
+
+/* ---- Smala skärmar ---- */
+
+@media (max-width: 640px) {
+  .help-hint { display: none; }
+  #word-input { width: 52vw; font-size: 1.1rem; }
+  #bottombar { bottom: 1.2rem; }
+  #songpanel { bottom: 5.6rem; }
+  #karaoke { bottom: 5.8rem; gap: 0.9rem; }
+  .karaoke-prev, .karaoke-next { flex-basis: 22vw; font-size: 0.85rem; }
+  .karaoke-current { font-size: 1.25rem; }
+}
+
+/* ---- Nedtonad rörelse ---- */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Textförhandsvisning i låtpanelen */
+.song-lyrics {
+  max-height: 7.5em;
+  overflow-y: auto;
+  margin: 0.4rem 0 0.7rem;
+  padding: 0.5rem 0.65rem;
+  font-family: "Iowan Old Style", Palatino, Georgia, serif;
+  font-style: italic;
+  font-size: 0.86rem;
+  line-height: 1.65;
+  color: rgba(250, 247, 239, 0.82);
+  border: 1px solid rgba(250, 247, 239, 0.14);
+  border-radius: 8px;
+  background: rgba(10, 10, 18, 0.35);
+}
+.song-lyrics .lyric-missing {
+  color: rgba(250, 247, 239, 0.45);
+  border-bottom: 1px dotted rgba(250, 247, 239, 0.4);
+}

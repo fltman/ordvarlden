@@ -1,0 +1,17 @@
+venv/
+__pycache__/
+.DS_Store
+*.pyc
+.env
+assets/songs/
+assets/words-archive/
+*.log
+.DS_Store
+.claude/
+assets/words/*/flat.png
+assets/words/*/traced.svg
+assets/words/*/original.png
+!assets/words/cool/original.png
+!assets/words/wow/original.png
+assets/interludes/*/flat.png
+assets/interludes/*/traced.svg

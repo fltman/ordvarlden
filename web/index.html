@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0a0a12">
+  <title>Ordvärlden</title>
+  <link rel="stylesheet" href="css/style.css?v=2">
+</head>
+<body>
+
+  <canvas id="gpu"></canvas>
+
+  <!-- Bootveil — integratören döljer med hidden-attributet eller class="done" (tonar ut) -->
+  <div id="boot" role="status">
+    <div class="boot-inner">
+      <h1 class="boot-title">Ordvärlden</h1>
+      <p class="boot-msg">Ordvärlden vaknar …</p>
+    </div>
+  </div>
+
+  <!-- Fatalt fel (t.ex. WebGPU saknas) — visa genom att ta bort hidden -->
+  <div id="fatal" hidden role="alertdialog" aria-modal="true" aria-labelledby="fatal-title">
+    <div class="fatal-inner">
+      <h1 id="fatal-title">Hoppsan.</h1>
+      <p id="fatal-msg"></p>
+    </div>
+  </div>
+
+  <!-- Statusnotiser (setStatus) -->
+  <div id="status" role="status" aria-live="polite" hidden>
+    <span id="status-text"></span>
+  </div>
+
+  <!-- HUD: ord på planeten (setWordList) -->
+  <nav id="wordlist" aria-label="Ord på planeten"></nav>
+
+  <!-- Ordfältet — hjältekontrollen — samt ♪-knappen för låt-läget -->
+  <div id="bottombar">
+    <form id="wordbar" autocomplete="off">
+      <input id="word-input" type="text" maxlength="16" placeholder="Skriv ett ord …"
+             spellcheck="false" autocomplete="off" enterkeyhint="go" aria-label="Nytt ord">
+      <button id="word-submit" type="submit">Skapa</button>
+    </form>
+    <div id="songbar">
+      <button id="song-toggle" type="button" aria-expanded="false" aria-controls="songpanel"
+              title="Låt-läge — res genom en hel låt">♪</button>
+      <input id="song-file" type="file" accept="audio/*" hidden aria-hidden="true">
+    </div>
+  </div>
+
+  <!-- Låt-läge: panel (öppnas av ♪-knappen; styrs av song.js) -->
+  <section id="songpanel" hidden aria-labelledby="songpanel-title">
+    <header class="song-head">
+      <h2 id="songpanel-title">Låt-läge</h2>
+      <button id="song-close" class="song-btn-ghost" type="button">Stäng</button>
+    </header>
+
+    <div id="song-step-pick" class="song-step">
+      <p class="song-desc">Välj en låt — varje sjunget ord blir ett landskap,
+        och resan landar på ordet i samma stund som det sjungs.</p>
+      <button id="song-choose" class="song-btn" type="button">Välj ljudfil …</button>
+    </div>
+
+    <div id="song-step-transcribe" class="song-step" hidden>
+      <p id="song-transcribe-name" class="song-file-name"></p>
+      <p class="song-busy"><span class="song-spinner" aria-hidden="true"></span>
+        Transkriberar …</p>
+    </div>
+
+    <div id="song-step-result" class="song-step" hidden>
+      <p id="song-result-name" class="song-file-name"></p>
+      <p id="song-stats" class="song-stats"></p>
+      <div id="song-lyrics" class="song-lyrics" hidden></div>
+      <button id="song-generate" class="song-btn" type="button" hidden></button>
+      <p id="song-cost" class="song-hint" hidden></p>
+      <p id="song-progress" class="song-busy" hidden><span class="song-spinner"
+          aria-hidden="true"></span> <span id="song-progress-text"></span></p>
+      <div class="song-actions">
+        <button id="song-play" class="song-btn" type="button" disabled>Spela</button>
+        <button id="song-new" class="song-btn-ghost" type="button">Ny låt</button>
+      </div>
+    </div>
+
+    <p id="song-error" class="song-error" hidden role="alert"></p>
+  </section>
+
+  <!-- Låt-läge: mini-pill under uppspelning -->
+  <div id="songpill" hidden>
+    <span class="songpill-note" aria-hidden="true">♪</span>
+    <span id="songpill-title"></span>
+    <button id="song-pause" class="song-btn-ghost" type="button">Paus</button>
+    <button id="song-stop" class="song-btn-ghost" type="button">Stopp</button>
+  </div>
+
+  <!-- Låt-läge: karaokeremsa (föregående / aktuellt / nästa ord) -->
+  <div id="karaoke" hidden aria-hidden="true">
+    <span class="karaoke-word karaoke-prev"></span>
+    <span class="karaoke-word karaoke-current"></span>
+    <span class="karaoke-word karaoke-next"></span>
+  </div>
+
+  <!-- Hjälprad + panel -->
+  <div id="help">
+    <span class="help-hint">dra = titta · scrolla / W S = fart · Enter = nytt ord</span>
+    <button id="help-toggle" type="button" aria-expanded="false" aria-controls="help-panel"
+            title="Visa hjälp">?</button>
+    <div id="help-panel" hidden>
+      <h2>Så funkar Ordvärlden</h2>
+      <ul>
+        <li><strong>Dra</strong> med musen för att titta dig omkring.</li>
+        <li><strong>Scrolla</strong> eller håll <kbd>W</kbd>/<kbd>S</kbd> för att ändra farten längs stigen.</li>
+        <li>Skriv ett ord nedan och tryck <kbd>Enter</kbd> — ett nytt landskap tecknas fram och läggs till på planeten.</li>
+        <li>Resan mellan två ord låter den ena teckningen sakta bli den andra.</li>
+        <li>Tryck på <strong>♪</strong> för låt-läget: ladda upp en låt och res genom dess ord i takt med sången.</li>
+      </ul>
+    </div>
+  </div>
+
+  <noscript>
+    <div class="noscript">
+      Den här sidan behöver JavaScript — slå på det och ladda om sidan.
+    </div>
+  </noscript>
+
+  <!-- Feltext när WebGPU saknas; läses av main.js -->
+  <template id="nogpu">WebGPU krävs — använd senaste Chrome, Edge eller Safari.</template>
+
+  <script src="js/earcut.vendor.js"></script>
+  <script type="module" src="js/main.js?v=5"></script>
+</body>
+</html>
