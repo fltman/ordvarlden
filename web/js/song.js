@@ -107,6 +107,9 @@ let pollTimer = null;
 let generating = false; // generera-knappen tryckt, ord på väg
 let playing = false;    // låt-läget aktivt (pill + karaoke synliga)
 let editing = false;    // ett inline-redigeringsfält är öppet i transkriptet
+let recorder = null;    // MediaRecorder under videoexport (null annars)
+let recordChunks = [];
+let audioCtx = null;    // WebAudio-kontext för att tappa låtljudet (återanvänds)
 
 function q() {
   if (!els) {
@@ -132,6 +135,7 @@ function q() {
       play: document.getElementById('song-play'),
       newSong: document.getElementById('song-new'),
       error: document.getElementById('song-error'),
+      exportBtn: document.getElementById('song-export'),
       pill: document.getElementById('songpill'),
       pillTitle: document.getElementById('songpill-title'),
       pause: document.getElementById('song-pause'),
@@ -226,6 +230,7 @@ function renderResult() {
   if (showProgress) e.progressText.textContent = `${nReady}/${unique.length} klara`;
 
   e.play.disabled = playing || unique.length === 0 || missing > 0;
+  if (e.exportBtn) e.exportBtn.disabled = e.play.disabled;
   if (unique.length === 0) {
     showError('Inga sångord hittades i låten — bara instrumental?');
   }
@@ -375,6 +380,63 @@ async function onGenerate() {
   }
 }
 
+// ---- videoexport --------------------------------------------------------------
+// Spelar in canvasen (WebGPU) + låtens ljud under uppspelningen och laddar ner
+// filen när låten tar slut/stoppas. Helt klientside; realtid (låtens längd).
+
+function startRecorder(audioEl) {
+  try {
+    if (typeof MediaRecorder === 'undefined') throw new Error('MediaRecorder saknas');
+    const canvas = document.getElementById('gpu');
+    const stream = canvas.captureStream(30);
+    audioCtx = audioCtx || new AudioContext();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    // Ljudet dras genom WebAudio: till högtalarna OCH till inspelningsspåret.
+    const src = audioCtx.createMediaElementSource(audioEl);
+    const dest = audioCtx.createMediaStreamDestination();
+    src.connect(audioCtx.destination);
+    src.connect(dest);
+    for (const t of dest.stream.getAudioTracks()) stream.addTrack(t);
+    const mime = ['video/mp4;codecs=avc1.640028,mp4a.40.2', 'video/mp4',
+                  'video/webm;codecs=vp9,opus', 'video/webm']
+      .find((t) => MediaRecorder.isTypeSupported(t));
+    if (!mime) throw new Error('ingen videocodec stöds');
+    recordChunks = [];
+    recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 10_000_000 });
+    recorder.addEventListener('dataavailable', (ev) => {
+      if (ev.data && ev.data.size) recordChunks.push(ev.data);
+    });
+    recorder.addEventListener('stop', saveRecording);
+    recorder.start(1000);
+    return true;
+  } catch (err) {
+    recorder = null;
+    showError(`Inspelningen kunde inte startas: ${err.message}`);
+    return false;
+  }
+}
+
+function stopRecorder() {
+  if (recorder && recorder.state !== 'inactive') recorder.stop();
+}
+
+function saveRecording() {
+  const mime = (recorder && recorder.mimeType) || 'video/webm';
+  const blob = new Blob(recordChunks, { type: mime });
+  recordChunks = [];
+  recorder = null;
+  if (!blob.size) return;
+  const base = ((song && song.title) || 'ordvärlden').replace(/\.[^.]+$/, '') || 'ordvärlden';
+  const ext = mime.startsWith('video/mp4') ? 'mp4' : 'webm';
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${base} — ordvärlden.${ext}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+}
+
 function wireAudio(a) {
   const e = q();
   a.addEventListener('play', () => { e.pause.textContent = 'Paus'; });
@@ -382,7 +444,7 @@ function wireAudio(a) {
   a.addEventListener('ended', () => { if (playing) exitSong(); });
 }
 
-async function onPlay() {
+async function onPlay(record = false) {
   const e = q();
   if (!song || playing) return;
   clearError();
@@ -400,12 +462,13 @@ async function onPlay() {
     audio = new Audio(`/assets/songs/${encodeURIComponent(song.id)}/audio`);
     audio.preload = 'auto';
     wireAudio(audio);
+    const recording = record && startRecorder(audio); // fel stoppar inte uppspelningen
     await audio.play();
     playing = true;
 
     // panelen kollapsar till mini-pillen; karaokeremsan tänds
     togglePanel(false);
-    e.pillTitle.textContent = song.title || 'Låt';
+    e.pillTitle.textContent = (recording ? '● ' : '') + (song.title || 'Låt');
     e.pause.textContent = 'Paus';
     e.pill.hidden = false;
     e.karaoke.hidden = false;
@@ -429,6 +492,7 @@ function togglePause() {
 
 function exitSong() {
   const e = q();
+  stopRecorder(); // laddar ner filen om en inspelning pågick
   if (audio) {
     try { audio.pause(); } catch { /* redan stoppad */ }
   }
@@ -460,7 +524,8 @@ export function initSongMode({ onEnterSong, onExitSong }) {
       if (span) beginWordEdit(span);
     });
   }
-  e.play.addEventListener('click', onPlay);
+  e.play.addEventListener('click', () => onPlay(false));
+  if (e.exportBtn) e.exportBtn.addEventListener('click', () => onPlay(true));
   e.pause.addEventListener('click', togglePause);
   e.stop.addEventListener('click', exitSong);
   if (e.newSong) {

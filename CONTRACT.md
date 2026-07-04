@@ -388,6 +388,16 @@ export function updateKaraoke(stations, index)  // textremsa (föreg/aktuellt/n�
   ordet) → `POST /api/song/<id>/words` med hela nya listan → panelen
   uppdateras från svaret. Pollningen rör inte panelen medan ett fält är
   öppet. `api.js`: `export async function updateSongWords(id, words)`.
+- Videoexport: knappen `#song-export` ("Spela in video", aktiv när Spela är
+  det) startar uppspelningen MED inspelning — helt klientside: canvasens
+  `captureStream(30)` + låtens ljud via WebAudio (MediaElementSource →
+  MediaStreamDestination; källan kopplas även till högtalarna) →
+  MediaRecorder (mp4 om webbläsaren stödjer det, annars webm,
+  ~10 Mbit/s). Realtid: inspelningen tar låtens längd. När låten tar slut
+  eller användaren trycker Stopp laddas filen ner som
+  `<låtnamn> — ordvärlden.<ext>`. Pillen visar "●" under inspelning.
+  Fel vid inspelningsstart avbryter INTE uppspelningen (visas som fel i
+  panelen).
 - main.js (integratören) äger uppspelningsloopen: i låt-läge ersätter
   `songPosition(...)` Journey-segmentet; mesh-cache nycklas `keyA|keyB`
   ⇒ upprepade ord och mellanspel återanvänder byggda meshar.
