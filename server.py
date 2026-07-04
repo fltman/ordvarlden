@@ -71,9 +71,10 @@ def _set_status(slug: str, status: str, error: str | None = None):
 
 def _worker():
     while True:
-        slug, word = _job_queue.get()
+        slug, word, mood = _job_queue.get()
         try:
-            pipeline.run_pipeline(word, status_callback=lambda p: _set_status(slug, p))
+            pipeline.run_pipeline(word, status_callback=lambda p: _set_status(slug, p),
+                                  mood=mood)
             _set_status(slug, "ready")
         except Exception as e:
             _set_status(slug, "error", str(e))
@@ -102,6 +103,13 @@ def _transcribe_song_job(song_id: str, input_path: Path, song_dir: Path, title: 
     try:
         data = transcribe.transcribe_song(input_path, song_dir)
         data["title"] = title  # server knows the uploaded filename; fix it in words.json
+        try:
+            import mood as mood_mod  # tools/ is first on sys.path
+            data["mood"] = mood_mod.write_mood_clause(
+                [w["w"] for w in data.get("words", [])], title)
+        except Exception as e:  # write_mood_clause är felsäker, men import kan fela
+            data["mood"] = ""
+            print(f"låt '{song_id}': stämningsklausulen hoppades över: {e}", flush=True)
         (song_dir / "words.json").write_text(
             json.dumps(data, ensure_ascii=False), encoding="utf-8")
         with _songs_lock:
@@ -115,6 +123,12 @@ def _transcribe_song_job(song_id: str, input_path: Path, song_dir: Path, title: 
             if song is not None:
                 song.update(status="error", error=str(e))
         print(f"låt '{song_id}': transkriberingen misslyckades: {e}", flush=True)
+
+
+def _song_mood(data: dict) -> str:
+    """Låtens stämningsklausul ur words.json; saknat/ogiltigt ⇒ "" (neutral)."""
+    mood = data.get("mood", "")
+    return mood.strip() if isinstance(mood, str) else ""
 
 
 def _unique_words(words: list[dict]) -> list[dict]:
@@ -164,8 +178,13 @@ def _song_response(song_id: str) -> dict | None:
         resp["error"] = song["error"]
     if song["status"] == "ready" and song["data"] is not None:
         data = song["data"]
+        mood = _song_mood(data)
         resp["duration"] = data.get("duration")
-        resp["words"] = data.get("words", [])
+        resp["mood"] = mood
+        # words.json bär rena ordslugs; API-svaret bär asset-slugs
+        # (<slug>--m<hash>) så att frontenden kan bygga scene-URL:er rakt av.
+        resp["words"] = [{**w, "slug": pipeline.asset_slug(w["slug"], mood)}
+                         for w in data.get("words", [])]
         resp["unique"] = _unique_words(resp["words"])
     return resp
 
@@ -376,6 +395,9 @@ class Handler(BaseHTTPRequestHandler):
         m = re.fullmatch(r"/api/song/([0-9a-f]{8})/generate", path)
         if m:
             return self._api_song_generate(m.group(1))
+        m = re.fullmatch(r"/api/song/([0-9a-f]{8})/words", path)
+        if m:
+            return self._api_song_words(m.group(1))
         if path == "/api/word":
             return self._api_word_post()
         return self._send_json({"error": "Okänd API-väg"}, 404)
@@ -406,8 +428,56 @@ class Handler(BaseHTTPRequestHandler):
                 _jobs[slug] = {"word": pipeline.display_word(word), "status": "queued", "error": None}
                 status, enqueue = "queued", True
         if enqueue:
-            _job_queue.put((slug, word))
+            _job_queue.put((slug, word, None))
         return self._send_json({"slug": slug, "status": status})
+
+    def _api_song_words(self, song_id: str):
+        """Redigerad transkribering: validera, slugifiera om, skriv words.json.
+        Body = {"words": [{"w", "start", "end"?}, ...]} (hela nya listan,
+        utan slugs). Svar = samma format som GET /api/song/<id>."""
+        state = _song_state(song_id)
+        if state is None:
+            return self._send_json({"error": "Okänd låt"}, 404)
+        if state["status"] != "ready" or state["data"] is None:
+            return self._send_json(
+                {"error": "Låten är inte färdigtranskriberad", "status": state["status"]}, 409)
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            body = json.loads(self.rfile.read(length).decode("utf-8"))
+            raw_words = body.get("words")
+        except (ValueError, UnicodeDecodeError, AttributeError):
+            return self._send_json({"error": "Ogiltig JSON-body — förväntar {\"words\": [...]}"}, 400)
+        if not isinstance(raw_words, list):
+            return self._send_json({"error": "Fältet 'words' saknas eller är inte en lista"}, 400)
+
+        new_words = []
+        for w in raw_words:
+            if not isinstance(w, dict):
+                return self._send_json({"error": "Varje ord måste vara ett objekt {w, start}"}, 400)
+            word, start = w.get("w"), w.get("start")
+            if not isinstance(word, str) or not isinstance(start, (int, float)):
+                return self._send_json({"error": "Varje ord behöver 'w' (sträng) och 'start' (tal)"}, 400)
+            try:
+                slug = pipeline.slugify(word)
+            except ValueError:
+                return self._send_json(
+                    {"error": f"Ogiltigt ord \"{word.strip()}\" — 1–16 tecken av A–Ö, "
+                              "siffror, mellanslag, ! ? -"}, 400)
+            entry = {"w": pipeline.display_word(word), "slug": slug, "start": float(start)}
+            if isinstance(w.get("end"), (int, float)):
+                entry["end"] = float(w["end"])
+            new_words.append(entry)
+        new_words.sort(key=lambda e: e["start"])
+
+        with _songs_lock:
+            song = _songs.get(song_id)
+            if song is None or song["data"] is None:
+                return self._send_json({"error": "Okänd låt"}, 404)
+            song["data"]["words"] = new_words
+            data = dict(song["data"])
+        (SONGS_DIR / song_id / "words.json").write_text(
+            json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        return self._send_json(_song_response(song_id))
 
     # -- song routes ----------------------------------------------------------
     def _api_song_upload(self, query: str):
@@ -462,13 +532,14 @@ class Handler(BaseHTTPRequestHandler):
         if resp["status"] != "ready":
             return self._send_json(
                 {"error": "Låten är inte färdigtranskriberad", "status": resp["status"]}, 409)
+        mood = resp.get("mood", "")
         queued = 0
         for u in resp["unique"]:  # already first-occurrence order
             if u["ready"]:
                 continue
-            slug, word = u["slug"], u["w"]
+            slug, word = u["slug"], u["w"]  # slug = asset-slug (<slug>--m<hash>)
             try:
-                if pipeline.slugify(word) != slug:
+                if pipeline.asset_slug(pipeline.slugify(word), mood) != slug:
                     print(f"låt '{song_id}': hoppar över '{word}' (slug-avvikelse)", flush=True)
                     continue
             except ValueError:
@@ -479,7 +550,7 @@ class Handler(BaseHTTPRequestHandler):
                     continue  # already queued/in progress
                 _jobs[slug] = {"word": pipeline.display_word(word),
                                "status": "queued", "error": None}
-            _job_queue.put((slug, word))
+            _job_queue.put((slug, word, mood))
             queued += 1
         return self._send_json({"queued": queued})
 

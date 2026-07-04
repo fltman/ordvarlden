@@ -29,17 +29,17 @@ const RISE      : f32 = 0.9;   // B-sidan börjar sänkt och stiger över horiso
 
 struct VSOut {
   @builtin(position) pos : vec4f,
-  @location(0) grey : f32,
+  @location(0) color : vec3f,
 };
 
 @vertex
 fn vs(
-  @location(0) posA  : vec2f,
-  @location(1) posB  : vec2f,
-  @location(2) greyA : f32,
-  @location(3) greyB : f32,
-  @location(4) bandA : f32,
-  @location(5) bandB : f32,
+  @location(0) posA   : vec2f,
+  @location(1) posB   : vec2f,
+  @location(2) colorA : vec4f,   // unorm8x4 — flat färg, scen A
+  @location(3) colorB : vec4f,   // unorm8x4 — flat färg, scen B
+  @location(4) bandA  : f32,
+  @location(5) bandB  : f32,
   @builtin(instance_index) inst : u32,
 ) -> VSOut {
   var out : VSOut;
@@ -48,7 +48,7 @@ fn vs(
     // Fjärrfält (himmel/galaxer): följer kameran, morphar A→B under resan.
     if (inst == 1u) {
       out.pos = vec4f(0.0, 0.0, 2.0, 1.0); // utanför clip — ingen dubblett
-      out.grey = 0.0;
+      out.color = vec3f(0.0);
       return out;
     }
     let p = mix(posA, posB, u.t);
@@ -57,7 +57,7 @@ fn vs(
     let s = d * TAN_HALF_FOV * 1.12; // lätt överskala döljer scenkanterna vid look-around
     let world = u.camPos + vec3f(p.x * s, p.y * s, -d);
     out.pos = u.proj * u.view * vec4f(world, 1.0);
-    out.grey = mix(greyA, greyB, u.t);
+    out.color = mix(colorA.rgb, colorB.rgb, u.t);
     return out;
   }
 
@@ -69,24 +69,22 @@ fn vs(
     let duck = DROP * s * pow(clamp(STATION_L * u.t / d, 0.0, 2.0), 0.7);
     let world = vec3f(posA.x * s, posA.y * s - duck, -d);
     out.pos = u.proj * u.view * vec4f(world, 1.0);
-    out.grey = greyA;
+    out.color = colorA.rgb;
   } else {
     // B:s diorama, förankrad vid station STATION_L; stiger upp över horisonten.
     let d = 6.0 * pow(1.9, bandB);
     let s = d * TAN_HALF_FOV;
     let world = vec3f(posB.x * s, posB.y * s - RISE * s * (1.0 - u.t), -(STATION_L + d));
     out.pos = u.proj * u.view * vec4f(world, 1.0);
-    out.grey = greyB;
+    out.color = colorB.rgb;
   }
   return out;
 }
 
 @fragment
 fn fs(v : VSOut) -> @location(0) vec4f {
-  // Duotone: tusch på papper.
-  let ink   = vec3f(0.05, 0.055, 0.08);
-  let paper = vec3f(0.985, 0.975, 0.945);
-  return vec4f(mix(ink, paper, v.grey), 1.0);
+  // Flat färg rakt av; duotone-mappningen för gråscener görs i morph.js.
+  return vec4f(v.color, 1.0);
 }
 `;
 
@@ -195,8 +193,8 @@ export class Renderer {
           attributes: [
             { shaderLocation: 0, offset: 0,  format: 'float32x2' }, // posA
             { shaderLocation: 1, offset: 8,  format: 'float32x2' }, // posB
-            { shaderLocation: 2, offset: 16, format: 'float32' },   // greyA
-            { shaderLocation: 3, offset: 20, format: 'float32' },   // greyB
+            { shaderLocation: 2, offset: 16, format: 'unorm8x4' },  // colorA
+            { shaderLocation: 3, offset: 20, format: 'unorm8x4' },  // colorB
             { shaderLocation: 4, offset: 24, format: 'float32' },   // bandA
             { shaderLocation: 5, offset: 28, format: 'float32' },   // bandB
           ],

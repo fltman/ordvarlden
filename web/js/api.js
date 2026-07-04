@@ -64,6 +64,16 @@ export async function generateSongWords(id) {
   return requestJSON(`/api/song/${encodeURIComponent(id)}/generate`, { method: 'POST' });
 }
 
+// POST /api/song/<id>/words {words: [{w, start, end?}, ...]} — redigerad
+// transkribering (hela listan, utan slugs). -> samma svar som getSong.
+export async function updateSongWords(id, words) {
+  return requestJSON(`/api/song/${encodeURIComponent(id)}/words`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ words }),
+  });
+}
+
 // GET /api/interludes -> [{slug: 'inter-1'}, ...] (tom lista om inga finns)
 export async function listInterludes() {
   return requestJSON('/api/interludes');

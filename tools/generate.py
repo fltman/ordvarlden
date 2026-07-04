@@ -4,7 +4,9 @@
 Text-to-image by default; with a style reference the image is sent along
 (img2img) so the new scene copies the established art style exactly.
 
-Importable: generate(word, output, style_ref=None) -> bool.
+Importable: generate(word, output, style_ref=None, mood=None) -> bool.
+mood: fri stämningsklausul (text) som appendas till prompten; tom/None ger
+NEUTRAL_PALETTE (den ursprungliga monokroma looken).
 Configuration errors (missing API key / openai package) raise RuntimeError;
 generation failures retry once and then return False.
 """
@@ -30,19 +32,27 @@ except ImportError:
 
 MODEL = "google/gemini-3-pro-image-preview"
 
-# Locked style per CONTRACT.md "Stil (låst)" — do not change without user's OK.
+# Locked style SKELETON per CONTRACT.md "Stil" — the palette is chosen by the
+# mood clause (song mode) or NEUTRAL_PALETTE (free mode). Do not change the
+# skeleton without user's OK.
 STYLE_PROMPT = (
-    "Monochrome hand-drawn comic ink illustration, exactly 4 flat grey tones, "
-    "no gradients, no color. First-person view standing on a tiny round planet "
+    "Hand-drawn comic ink illustration with completely flat tones (at most 6), "
+    "no gradients. First-person view standing on a tiny round planet "
     "with a strongly curved horizon. A winding path leads from the viewer toward "
     'giant monumental carved 3D stone letters spelling the word "{WORD}". '
     "Starry night sky with spiral galaxies. Rocks and small flowers along the "
-    "path. Wide 16:9 landscape composition."
+    "path. Wide 16:9 landscape composition; the scene fills the entire frame "
+    "edge to edge — no border, no vignette, no frame."
+)
+
+# Free mode (no mood): the original monochrome look.
+NEUTRAL_PALETTE = (
+    "Strictly monochrome: exactly 4 flat grey tones, no color."
 )
 
 STYLE_REF_INSTRUCTION = (
     "Copy the exact art style of the reference image — the same line work, the "
-    "same flat grey tones, the same composition language — but depict a NEW "
+    "same flat tones, the same composition language — but depict a NEW "
     "scene with a NEW word: "
 )
 
@@ -74,8 +84,10 @@ def _extract_image(response) -> bytes | None:
     return None
 
 
-def _build_messages(word: str, style_ref) -> list:
+def _build_messages(word: str, style_ref, mood=None) -> list:
+    # mood = fri stämningsklausul (sceninnehåll + palett) skriven av tools/mood.py
     prompt = STYLE_PROMPT.replace("{WORD}", str(word))
+    prompt += " " + (mood.strip() if mood and mood.strip() else NEUTRAL_PALETTE)
     if style_ref:
         ref = Path(style_ref)
         if not ref.is_file():
@@ -91,10 +103,10 @@ def _build_messages(word: str, style_ref) -> list:
     return [{"role": "user", "content": content}]
 
 
-def generate(word: str, output, style_ref=None) -> bool:
+def generate(word: str, output, style_ref=None, mood=None) -> bool:
     output = Path(output)
     client = _client()
-    messages = _build_messages(word, style_ref)
+    messages = _build_messages(word, style_ref, mood)
 
     last_err = "okänt fel"
     for attempt in (1, 2):
@@ -120,9 +132,10 @@ if __name__ == "__main__":
     ap.add_argument("word")
     ap.add_argument("--output", required=True, help="sökväg till PNG som skrivs")
     ap.add_argument("--style-ref", help="tidigare original.png att kopiera stilen från")
+    ap.add_argument("--mood", help="fri stämningsklausul (sceninnehåll + palett)")
     a = ap.parse_args()
     try:
-        ok = generate(a.word, a.output, a.style_ref)
+        ok = generate(a.word, a.output, a.style_ref, a.mood)
     except RuntimeError as e:
         print(f"FEL: {e}", file=sys.stderr)
         sys.exit(1)

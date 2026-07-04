@@ -483,6 +483,37 @@ html, body {
   color: var(--paper);
 }
 
+.lyric-word {
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.lyric-word:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.lyric-edit {
+  font: inherit;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 3px;
+  padding: 0 0.2em;
+  width: 7.5em;
+  outline: none;
+}
+
+.song-mood {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 0.85rem;
+  color: var(--paper);
+  opacity: 0.75;
+  margin: 0.3rem 0 0;
+  max-height: 4.5em;
+  overflow-y: auto;
+}
+
 .song-busy {
   display: flex;
   align-items: center;

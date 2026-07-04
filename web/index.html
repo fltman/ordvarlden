@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#0a0a12">
   <title>Ordvärlden</title>
-  <link rel="stylesheet" href="css/style.css?v=2">
+  <link rel="stylesheet" href="css/style.css?v=4">
 </head>
 <body>
 
@@ -72,7 +72,10 @@
     <div id="song-step-result" class="song-step" hidden>
       <p id="song-result-name" class="song-file-name"></p>
       <p id="song-stats" class="song-stats"></p>
+      <p id="song-mood" class="song-mood" hidden></p>
       <div id="song-lyrics" class="song-lyrics" hidden></div>
+      <p id="song-edit-hint" class="song-hint" hidden>Hör whisper fel? Klicka på
+        ett ord för att rätta det — töm fältet för att ta bort ordet.</p>
       <button id="song-generate" class="song-btn" type="button" hidden></button>
       <p id="song-cost" class="song-hint" hidden></p>
       <p id="song-progress" class="song-busy" hidden><span class="song-spinner"
@@ -128,6 +131,6 @@
   <template id="nogpu">WebGPU krävs — använd senaste Chrome, Edge eller Safari.</template>
 
   <script src="js/earcut.vendor.js"></script>
-  <script type="module" src="js/main.js?v=5"></script>
+  <script type="module" src="js/main.js?v=8"></script>
 </body>
 </html>

@@ -1,8 +1,29 @@
 // morph.js — formmatchning A<->B och byggande av GPU-färdig morph-vertexdata.
-// Se CONTRACT.md: vertexformat 8 float32/vertex (posA, posB, greyA, greyB,
-// bandA, bandB), uint32-index förhandssorterade bakifrån-och-fram.
+// Se CONTRACT.md: vertexformat 32 byte/vertex (posA, posB f32x2; colorA,
+// colorB unorm8x4; bandA, bandB f32), uint32-index förhandssorterade
+// bakifrån-och-fram.
 
 import { resampleRing, triangulateRing } from './tess.js';
+
+// Duotone-fallback för scener utan rgb-fält (äldre gråskale-scener): samma
+// tusch/papper-konstanter som tidigare låg i fragmentshadern — utseendet för
+// gamla scener är exakt oförändrat.
+const INK = [0.05, 0.055, 0.08];
+const PAPER = [0.985, 0.975, 0.945];
+
+// Formens flata färg som RGBA-packad u32 (little-endian: r | g<<8 | b<<16).
+function packColor(s) {
+  let r, g, b;
+  if (s.rgb) {
+    [r, g, b] = s.rgb;
+  } else {
+    const t = s.grey / 255;
+    r = Math.round((INK[0] + (PAPER[0] - INK[0]) * t) * 255);
+    g = Math.round((INK[1] + (PAPER[1] - INK[1]) * t) * 255);
+    b = Math.round((INK[2] + (PAPER[2] - INK[2]) * t) * 255);
+  }
+  return (r | (g << 8) | (b << 16) | (255 << 24)) >>> 0;
+}
 
 const W_CENTROID = 1.0;
 const W_AREA = 0.7;
@@ -118,7 +139,9 @@ function matchShapes(fa, fb, diag) {
 
 // Bygger morph-mesh mellan två scene JSON. Returnerar:
 // {
-//   vertexData: Float32Array (vertexCount*8) — [ax,ay,bx,by,greyA,greyB,bandA,bandB]
+//   vertexData: Float32Array (vertexCount*8) — [ax,ay,bx,by,colorA(u32),
+//               colorB(u32),bandA,bandB]; färgslottarna skrivs via en
+//               Uint32Array-vy över samma buffert (unorm8x4 i pipelinen)
 //   indexData:  Uint32Array — ETT draw-call; chunk-sorterad efter max(bandA,bandB)
 //               fallande, därefter ursprunglig målarordning stigande
 //   drawOrder:  [{firstIndex, indexCount, band, kind, a, b, paint}] i indexordning,
@@ -163,20 +186,21 @@ export function buildMorphMesh(sceneA, sceneB) {
     vertexCount += job.n;
   }
   const vertexData = new Float32Array(vertexCount * 8);
+  const vertexU32 = new Uint32Array(vertexData.buffer); // färgslottar (unorm8x4)
 
   let indexCount = 0;
   for (const job of jobs) {
     const n = job.n;
     const base = job.base;
     let ringA, ringB;       // pixelrymd, Float64Array 2n
-    let greyA, greyB, bandA, bandB;
+    let colorA, colorB, bandA, bandB;
     let na, nb;             // normalisering per ringens källscen
 
     if (job.kind === 'matched') {
       const A = shA[job.a], B = shB[job.b];
       ringA = resampleRing(A.rings[0], n);
       ringB = resampleRing(B.rings[0], n);
-      greyA = A.grey / 255; greyB = B.grey / 255;
+      colorA = packColor(A); colorB = packColor(B);
       bandA = clsA[job.a].bandF;
       bandB = clsB[job.b].bandF;
       na = normA; nb = normB;
@@ -190,7 +214,7 @@ export function buildMorphMesh(sceneA, sceneB) {
         ringB[2 * k] = A.centroid[0];
         ringB[2 * k + 1] = A.centroid[1];
       }
-      greyA = greyB = A.grey / 255;
+      colorA = colorB = packColor(A);
       bandA = bandB = clsA[job.a].bandF;
       na = nb = normA;
       job.tri = triangulateRing(ringA);
@@ -204,7 +228,7 @@ export function buildMorphMesh(sceneA, sceneB) {
         ringA[2 * k] = B.centroid[0];
         ringA[2 * k + 1] = B.centroid[1];
       }
-      greyA = greyB = B.grey / 255;
+      colorA = colorB = packColor(B);
       bandA = bandB = clsB[job.b].bandF;
       na = nb = normB;
       job.tri = triangulateRing(ringB);
@@ -216,8 +240,8 @@ export function buildMorphMesh(sceneA, sceneB) {
       vertexData[o + 1] = na.y(ringA[2 * k + 1]);
       vertexData[o + 2] = nb.x(ringB[2 * k]);
       vertexData[o + 3] = nb.y(ringB[2 * k + 1]);
-      vertexData[o + 4] = greyA;
-      vertexData[o + 5] = greyB;
+      vertexU32[o + 4]  = colorA;
+      vertexU32[o + 5]  = colorB;
       vertexData[o + 6] = bandA;
       vertexData[o + 7] = bandB;
     }

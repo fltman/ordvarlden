@@ -3,7 +3,7 @@
 // updateKaraoke. Ingen DOM-åtkomst vid importtillfället — alla DOM-uppslag sker
 // inuti funktionerna (modulen enhetstestas i node).
 
-import { uploadSong, getSong, generateSongWords, listInterludes } from './api.js';
+import { uploadSong, getSong, generateSongWords, listInterludes, updateSongWords } from './api.js';
 
 // ---- konstanter -------------------------------------------------------------
 
@@ -106,6 +106,7 @@ let audio = null;       // <audio>-elementet under uppspelning
 let pollTimer = null;
 let generating = false; // generera-knappen tryckt, ord på väg
 let playing = false;    // låt-läget aktivt (pill + karaoke synliga)
+let editing = false;    // ett inline-redigeringsfält är öppet i transkriptet
 
 function q() {
   if (!els) {
@@ -121,6 +122,8 @@ function q() {
       stepResult: document.getElementById('song-step-result'),
       resultName: document.getElementById('song-result-name'),
       stats: document.getElementById('song-stats'),
+      mood: document.getElementById('song-mood'),
+      editHint: document.getElementById('song-edit-hint'),
       lyrics: document.getElementById('song-lyrics'),
       generate: document.getElementById('song-generate'),
       cost: document.getElementById('song-cost'),
@@ -182,19 +185,29 @@ function renderResult() {
   e.resultName.textContent = song.title || '';
   e.stats.textContent = `${nWords} ord · ${unique.length} unika · ${nReady} klara`;
 
+  // AI-skriven stämningsklausul (fri text ur låttexten) — visas som kuriosa.
+  if (e.mood) {
+    const clause = typeof song.mood === 'string' ? song.mood.trim() : '';
+    e.mood.textContent = clause;
+    e.mood.hidden = !clause;
+  }
+
   // Textförhandsvisning: hela transkriptet, ogenererade ord markerade.
-  if (e.lyrics) {
+  // Orden är klickbara (rätta/ta bort); rör inte DOM:en medan ett fält är öppet.
+  if (e.lyrics && !editing) {
     const readySlugs = new Set(unique.filter((u) => u.ready).map((u) => u.slug));
     e.lyrics.textContent = '';
-    for (const w of song.words || []) {
+    (song.words || []).forEach((w, i) => {
       const span = document.createElement('span');
       span.textContent = w.w;
-      span.title = `${w.start.toFixed(1)} s`;
-      if (!readySlugs.has(w.slug)) span.className = 'lyric-missing';
+      span.title = `${w.start.toFixed(1)} s — klicka för att rätta`;
+      span.className = 'lyric-word' + (readySlugs.has(w.slug) ? '' : ' lyric-missing');
+      span.dataset.index = String(i);
       e.lyrics.appendChild(span);
       e.lyrics.appendChild(document.createTextNode(' '));
-    }
+    });
     e.lyrics.hidden = (song.words || []).length === 0;
+    if (e.editHint) e.editHint.hidden = e.lyrics.hidden;
   }
 
   const showGen = missing > 0 && !generating;
@@ -217,6 +230,65 @@ function renderResult() {
     showError('Inga sångord hittades i låten — bara instrumental?');
   }
   showStep('result');
+}
+
+// ---- transkript-redigering ---------------------------------------------------
+// Klick på ett ord → inline-<input>. Enter/blur = spara, Escape = avbryt,
+// tomt fält = ta bort ordet. Hela nya listan POST:as (utan slugs); panelen
+// uppdateras från serverns svar.
+
+function beginWordEdit(span) {
+  if (editing || !song || !songId) return;
+  const index = Number(span.dataset.index);
+  const words = song.words || [];
+  if (!Number.isInteger(index) || index < 0 || index >= words.length) return;
+  editing = true;
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.maxLength = 16;
+  input.value = words[index].w;
+  input.className = 'lyric-edit';
+  input.setAttribute('aria-label', 'Rätta ordet');
+  span.replaceChildren(input);
+  input.focus();
+  input.select();
+
+  let done = false;
+  const finish = (commit) => {
+    if (done) return;
+    done = true;
+    editing = false;
+    const value = input.value.trim();
+    if (!commit || value === words[index].w) {
+      renderResult();
+      return;
+    }
+    commitWordEdit(index, value);
+  };
+  input.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') { ev.preventDefault(); finish(true); }
+    else if (ev.key === 'Escape') { ev.preventDefault(); finish(false); }
+  });
+  input.addEventListener('blur', () => finish(true));
+}
+
+async function commitWordEdit(index, value) {
+  // value === '' ⇒ ordet tas bort. Skicka {w, start, end} — aldrig slugs.
+  const words = (song.words || [])
+    .map((w, i) => (i === index && value === '' ? null : {
+      w: i === index ? value : w.w,
+      start: w.start,
+      ...(typeof w.end === 'number' ? { end: w.end } : {}),
+    }))
+    .filter(Boolean);
+  clearError();
+  try {
+    song = await updateSongWords(songId, words);
+  } catch (err) {
+    showError(`Kunde inte spara ändringen: ${err.message}`);
+  }
+  renderResult();
 }
 
 function stopPolling() {
@@ -382,6 +454,12 @@ export function initSongMode({ onEnterSong, onExitSong }) {
   e.choose.addEventListener('click', () => e.file.click());
   e.file.addEventListener('change', onFileChosen);
   e.generate.addEventListener('click', onGenerate);
+  if (e.lyrics) {
+    e.lyrics.addEventListener('click', (ev) => {
+      const span = ev.target.closest('.lyric-word');
+      if (span) beginWordEdit(span);
+    });
+  }
   e.play.addEventListener('click', onPlay);
   e.pause.addEventListener('click', togglePause);
   e.stop.addEventListener('click', exitSong);

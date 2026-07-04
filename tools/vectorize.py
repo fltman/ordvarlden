@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Vectorize a word-monument PNG into a scene JSON for the WebGPU renderer.
 
-Pipeline: PNG -> posterize to flat greys -> vtracer (polygon mode) -> parse SVG
+Pipeline: PNG -> quantize to flat colors -> vtracer (polygon mode) -> parse SVG
 -> normalized scene JSON with stacked polygon rings, flat colors, paint order.
+Per shape: rgb = the flat color, grey = its Rec. 709 luminance (used by
+matching heuristics and as fallback for pre-color scenes).
 """
 
 import argparse
@@ -17,15 +19,18 @@ from PIL import Image
 
 VTRACER = os.path.expanduser("~/.cargo/bin/vtracer")
 
-# Posterize to this many grey levels before tracing; keeps shapes flat and clean.
-GREY_LEVELS = 5
+# Quantize to at most this many flat colors before tracing; keeps shapes flat
+# and clean. Monochrome inputs come out as flat greys, like before.
+# MAXCOVERAGE (not MEDIANCUT): små accentfärger (t.ex. en ensam gul glöd)
+# överlever — MEDIANCUT viktar efter pixelantal och slår ihop dem.
+COLOR_LEVELS = 12
 
 
 def posterize(src: Path, dst: Path) -> tuple[int, int]:
-    img = Image.open(src).convert("L")
+    img = Image.open(src).convert("RGB")
     w, h = img.size
-    step = 255 // (GREY_LEVELS - 1)
-    img = img.point(lambda p: min(255, round(p / step) * step))
+    img = img.quantize(colors=COLOR_LEVELS, method=Image.Quantize.MAXCOVERAGE,
+                       dither=Image.Dither.NONE)
     img.convert("RGB").save(dst)
     return w, h
 
@@ -64,11 +69,12 @@ def parse_svg(svg_text: str):
         if not rings:
             continue
         fill = fill_m.group(1)
-        if fill.startswith("#"):
-            grey = int(fill[1:3], 16)
+        if fill.startswith("#") and len(fill) >= 7:
+            rgb = [int(fill[1:3], 16), int(fill[3:5], 16), int(fill[5:7], 16)]
         else:
-            grey = 128
-        shapes.append({"rings": rings, "grey": grey})
+            rgb = [128, 128, 128]
+        grey = round(0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2])
+        shapes.append({"rings": rings, "grey": grey, "rgb": rgb})
     return shapes
 
 
@@ -122,6 +128,7 @@ def build_scene(word: str, shapes, width: int, height: int, min_area_frac: float
         out.append({
             "rings": s["rings"],
             "grey": s["grey"],
+            "rgb": s["rgb"],
             "area": round(area, 1),
             "centroid": [round(cx, 1), round(cy, 1)],
             "bbox": bbox,
