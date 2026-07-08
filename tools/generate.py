@@ -33,16 +33,25 @@ except ImportError:
 MODEL = "google/gemini-3-pro-image-preview"
 
 # Locked style SKELETON per CONTRACT.md "Stil" — the palette is chosen by the
-# mood clause (song mode) or NEUTRAL_PALETTE (free mode). Do not change the
-# skeleton without user's OK.
+# mood clause (song mode) or NEUTRAL_PALETTE (free mode). The FOCAL element
+# (what the path leads to) is either the carved word or, for a concrete noun,
+# the object itself (subject.py). Do not change the skeleton without user's OK.
 STYLE_PROMPT = (
     "Hand-drawn comic ink illustration with completely flat tones (at most 6), "
     "no gradients. First-person view standing on a tiny round planet "
     "with a strongly curved horizon. A winding path leads from the viewer toward "
-    'giant monumental carved 3D stone letters spelling the word "{WORD}". '
+    "{FOCAL}. "
     "Starry night sky with spiral galaxies. Rocks and small flowers along the "
     "path. Wide 16:9 landscape composition; the scene fills the entire frame "
     "edge to edge — no border, no vignette, no frame."
+)
+
+# Default focal element: the word as carved stone letters.
+FOCAL_TEXT = 'giant monumental carved 3D stone letters spelling the word "{WORD}"'
+# Concrete-noun focal element: the object itself as a colossal monument, no text.
+FOCAL_OBJECT = (
+    "a monumental sculpture of {SUBJECT} rising at the end of the path, as the "
+    "single giant landmark — absolutely NO carved letters, words or writing anywhere"
 )
 
 # Free mode (no mood): the original monochrome look.
@@ -53,7 +62,7 @@ NEUTRAL_PALETTE = (
 STYLE_REF_INSTRUCTION = (
     "Copy the exact art style of the reference image — the same line work, the "
     "same flat tones, the same composition language — but depict a NEW "
-    "scene with a NEW word: "
+    "scene with a NEW subject: "
 )
 
 MIME_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}
@@ -84,9 +93,15 @@ def _extract_image(response) -> bytes | None:
     return None
 
 
-def _build_messages(word: str, style_ref, mood=None) -> list:
+def _build_messages(word: str, style_ref, mood=None, subject=None) -> list:
     # mood = fri stämningsklausul (sceninnehåll + palett) skriven av tools/mood.py
-    prompt = STYLE_PROMPT.replace("{WORD}", str(word))
+    # subject = engelsk föremålsfras (subject.py); icke-tom ⇒ rita föremålet i
+    # stället för de huggna bokstäverna.
+    if subject and str(subject).strip():
+        focal = FOCAL_OBJECT.replace("{SUBJECT}", str(subject).strip())
+    else:
+        focal = FOCAL_TEXT.replace("{WORD}", str(word))
+    prompt = STYLE_PROMPT.replace("{FOCAL}", focal)
     prompt += " " + (mood.strip() if mood and mood.strip() else NEUTRAL_PALETTE)
     if style_ref:
         ref = Path(style_ref)
@@ -103,10 +118,10 @@ def _build_messages(word: str, style_ref, mood=None) -> list:
     return [{"role": "user", "content": content}]
 
 
-def generate(word: str, output, style_ref=None, mood=None) -> bool:
+def generate(word: str, output, style_ref=None, mood=None, subject=None) -> bool:
     output = Path(output)
     client = _client()
-    messages = _build_messages(word, style_ref, mood)
+    messages = _build_messages(word, style_ref, mood, subject)
 
     last_err = "okänt fel"
     for attempt in (1, 2):
@@ -133,9 +148,11 @@ if __name__ == "__main__":
     ap.add_argument("--output", required=True, help="sökväg till PNG som skrivs")
     ap.add_argument("--style-ref", help="tidigare original.png att kopiera stilen från")
     ap.add_argument("--mood", help="fri stämningsklausul (sceninnehåll + palett)")
+    ap.add_argument("--subject", help="engelsk föremålsfras: rita föremålet i "
+                    "stället för de huggna bokstäverna (t.ex. 'a giant sausage')")
     a = ap.parse_args()
     try:
-        ok = generate(a.word, a.output, a.style_ref, a.mood)
+        ok = generate(a.word, a.output, a.style_ref, a.mood, a.subject)
     except RuntimeError as e:
         print(f"FEL: {e}", file=sys.stderr)
         sys.exit(1)

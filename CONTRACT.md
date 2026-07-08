@@ -19,8 +19,9 @@ från ett textfält.
 ## Katalogstruktur
 
 ```
-tools/generate.py     ord (+stämning) -> original.png (OpenRouter gemini-3-pro-image-preview)
+tools/generate.py     ord (+stämning +föremål) -> original.png (OpenRouter gemini-3-pro-image-preview)
 tools/mood.py         sångtext -> stämning (LLM-klassning via OpenRouter, fallback "neutral")
+tools/subject.py      ord -> föremålsfras om konkret substantiv (LLM), annars "" (text)
 tools/vectorize.py    original.png -> scene.json (vtracer CLI + parsning + band)
 tools/pipeline.py     ord (+stämning) -> assets/words/<asset-slug>/{original.png,flat.png,traced.svg,scene.json}
 server.py             statiskt + API, port 8144, jobbkö för generering
@@ -414,10 +415,26 @@ LRU med max 80 par (Map-ordning: delete+set vid träff, äldsta först ut).
 
 Handtecknad serietusch med FLATA toner (max ~6), inga gradienter;
 förstapersonsvy på en liten rund planet med kraftigt krökt horisont;
-slingrande stig mot gigantiska huggna 3D-stenbokstäver med ORDET; stjärnhimmel
+slingrande stig mot ett gigantiskt FOKUS; stjärnhimmel
 med spiralgalaxer; stenar och små blommor längs stigen; bred 16:9 som fyller
 hela bildytan kant till kant (ingen ram/vinjett — viktigt för text-only-fallet
 utan stilreferens).
+
+FOKUS (vad stigen leder till) väljs per ord av `tools/subject.py`:
+- **Konkret, avbildbart substantiv** (ett fysiskt föremål/varelse/ting) →
+  föremålet självt som ett kolossalt monument, UTAN bokstäver
+  (t.ex. KORVEN → en jättekorv). En kort engelsk föremålsfras
+  ("a giant sausage") skrivs av en textmodell (env `SUBJECT_MODEL`, default
+  `google/gemini-2.5-flash`) och ersätter `{FOCAL}` i STYLE_PROMPT.
+- **Allt annat** (verb, adjektiv, pronomen, egennamn, ABSTRAKTA substantiv som
+  årstider/väder/känslor, funktionsord) → de gigantiska huggna 3D-stenbokstäverna
+  med ORDET, som förut.
+- Klassaren är FELSÄKER: saknad nyckel/API-fel/tomt svar ⇒ "" ⇒ text-fallback,
+  fäller aldrig en generering. Stäng av helt med env `WORD_AS_OBJECT=0` (då
+  ritas alltid bokstäver). `pipeline.run_pipeline(..., subject=None)` autoklassar;
+  en sträng åsidosätter (tom sträng tvingar text). Beslutet påverkar INTE
+  asset-slugen (samma ord/stämning ⇒ samma katalog) och används bara när
+  original.png faktiskt genereras — cachen är oförändrad.
 
 PALETTEN är INTE låst: stämningsklausulen (se "Stämning") väljer fritt en
 begränsad flat färgpalett utifrån låttexten, plus sceninnehåll (väder,

@@ -9,6 +9,7 @@ other word as style reference, then vectorizes to scene.json.
 import argparse
 import hashlib
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -21,7 +22,13 @@ if str(TOOLS_DIR) not in sys.path:
     sys.path.insert(0, str(TOOLS_DIR))
 
 import generate as generate_mod
+import subject as subject_mod
 import vectorize
+
+# Konkreta substantiv ritas som föremålet i stället för huggna bokstäver
+# (subject.py). Stäng av med WORD_AS_OBJECT=0.
+def _word_as_object_enabled() -> bool:
+    return os.environ.get("WORD_AS_OBJECT", "1") != "0"
 
 # CONTRACT.md: 1–16 chars of letters (incl. åäö), digits, space, ! ? -
 WORD_RE = re.compile(r"^[A-Za-zÅÄÖåäö0-9 !?\-]{1,16}$")
@@ -89,7 +96,9 @@ def _latest_style_ref(exclude_slug: str) -> Path | None:
 
 
 def run_pipeline(word: str, status_callback=None, no_generate: bool = False,
-                 mood=None) -> dict:
+                 mood=None, subject=None) -> dict:
+    """subject: None ⇒ klassa automatiskt (konkret substantiv → föremål) om
+    WORD_AS_OBJECT != 0; en sträng ⇒ använd den rakt av ("" tvingar text)."""
     slug = asset_slug(slugify(word), mood)
     display = display_word(word)
     word_dir = WORDS_DIR / slug
@@ -102,12 +111,18 @@ def run_pipeline(word: str, status_callback=None, no_generate: bool = False,
             status_callback(p)
 
     generated = False
+    used_subject = ""
     if not original.is_file():
         if no_generate:
             raise RuntimeError(f"original.png saknas för '{slug}' och generering är avstängd (--no-generate)")
+        subj = subject
+        if subj is None and _word_as_object_enabled():
+            subj = subject_mod.object_for_word(display)
+        used_subject = (subj or "").strip()
         phase("generating")
         style_ref = _latest_style_ref(slug)
-        if not generate_mod.generate(display, original, style_ref, mood=mood):
+        if not generate_mod.generate(display, original, style_ref, mood=mood,
+                                     subject=used_subject or None):
             raise RuntimeError(f"Bildgenereringen misslyckades för '{display}'")
         generated = True
 
@@ -118,6 +133,7 @@ def run_pipeline(word: str, status_callback=None, no_generate: bool = False,
         "word": display,
         "slug": slug,
         "mood": (mood or "").strip(),
+        "subject": used_subject,
         "dir": str(word_dir),
         "scene_json": str(scene_path),
         "generated": generated,
@@ -132,10 +148,12 @@ if __name__ == "__main__":
                     help="hoppa över genereringssteget (fel om original.png saknas)")
     ap.add_argument("--mood", help="fri stämningsklausul: genererar i "
                     "assets/words/<slug>--m<hash>/ och appendas till prompten")
+    ap.add_argument("--subject", help="engelsk föremålsfras (åsidosätter "
+                    "autoklassningen; tom sträng tvingar text)")
     a = ap.parse_args()
     try:
         info = run_pipeline(a.word, status_callback=lambda p: print(f"[{p}]", flush=True),
-                            no_generate=a.no_generate, mood=a.mood)
+                            no_generate=a.no_generate, mood=a.mood, subject=a.subject)
     except (ValueError, RuntimeError) as e:
         print(f"FEL: {e}", file=sys.stderr)
         sys.exit(1)

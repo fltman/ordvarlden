@@ -1,0 +1,11 @@
+/* cloud.css — små avvikelser för Partikelvärlden ovanpå style.css.
+   Molnrenderaren rensar till #08080e; matcha sidbakgrunden så kanterna smälter
+   ihop och bootslöjan tonar mot samma svärta. */
+
+:root {
+  --bg: #08080e;
+}
+
+#boot {
+  background: radial-gradient(ellipse at center, #101019 0%, #08080e 74%);
+}

@@ -104,6 +104,7 @@ let song = null;        // senaste GET /api/song/<id>-svar med status "ready"
 let songId = null;
 let audio = null;       // <audio>-elementet under uppspelning
 let pollTimer = null;
+let pollFailures = 0;   // fortlöpande misslyckade statuspollar (tål tillfälliga)
 let generating = false; // generera-knappen tryckt, ord på väg
 let playing = false;    // låt-läget aktivt (pill + karaoke synliga)
 let editing = false;    // ett inline-redigeringsfält är öppet i transkriptet
@@ -303,8 +304,11 @@ function stopPolling() {
   }
 }
 
+const MAX_POLL_FAILURES = 5; // ~15 s otillgänglig server (POLL_MS·5) innan vi ger upp
+
 function startPolling() {
   stopPolling();
+  pollFailures = 0;
   pollTimer = setInterval(pollSong, POLL_MS);
 }
 
@@ -317,11 +321,17 @@ async function pollSong() {
   try {
     s = await getSong(songId);
   } catch (err) {
+    // En tillfällig nätverksmiss (t.ex. serveromstart eller CPU-mättnad under
+    // transkriberingen) ska INTE kasta bort en pågående transkribering — tåla
+    // några i rad, ge upp först därefter.
+    pollFailures++;
+    if (pollFailures < MAX_POLL_FAILURES) return;
     stopPolling();
     showError(`Kunde inte läsa låtens status: ${err.message}`);
     showStep('pick');
     return;
   }
+  pollFailures = 0;
   if (s.status === 'error') {
     stopPolling();
     showError(s.error || 'Transkriberingen misslyckades.');
